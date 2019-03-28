@@ -1,0 +1,47 @@
+  function bookTicket(req, res) {
+    var clubid = req.body.clubid;
+    // var eventDate = "19/Mar/2019";//req.query.eventDate;
+    // console.log("eventDate " + eventDate);
+    console.log("post data " + JSON.stringify(req.body));
+    console.log("post data " + clubid);
+    pool.getConnection(function(err, connection) {
+      if (err) {
+        connection.release();
+        res.json({ code: 100, status: "Error in connection database" });
+        return;
+      }
+  
+      console.log("connected as id " + connection.threadId);
+      var testSQL = "INSERT INTO ticketbookingdetails (bookingid , userid) VALUES(?,?)"
+      var insertSQL = "INSERT INTO ticketbookingdetails (bookingid , userid , mobilenumber , "+
+                    " email , clubid , clubname , eventid , eventname , eventdate , postedby  ,"+
+                    " offerid , tablediscountamt , tablediscountpercentage ,  passdiscountamt , "+
+                    " passdiscountpercentage ,  totalprice , priceafterdiscount , paidamount , "+
+                    " remainingamount , guestlistgirlcount , guestlistcouplecount , passcouplecount , "+
+                    " passstagcount , tablenumber , tablepx , transactionnumber , paymentstatusmsg, bookingconfirm , "+
+                    " termncondition , latlong , qrcode , bookingdate ,  bookingtimestamp )"+
+                    "VALUES(?,?,?,?,?,  ?,?,?,?,?,  ?,?,?,?,?,  ?,?,?,?,?, ?,?,?,?,?, ?,?,?,?,?,  ?,)";
+      connection.query(insertSQL, [req.body.bookingid , req.body.userid , req.body.mobilenumber , 
+                    req.body.email , req.body.clubid , req.body.clubname , req.body.eventid , req.body.eventname , req.body.eventdate , 
+                    req.body.postedby  , req.body.offerid , req.body.tablediscountamt , req.body.tablediscountpercentage , 
+                    req.body.passdiscountamt , req.body.passdiscountpercentage , 
+                    req.body.totalprice , req.body.priceafterdiscount , req.body.paidamount , 
+                    req.body.remainingamount , req.body.guestlistgirlcount , req.body.guestlistcouplecount , req.body.passcouplecount , 
+                    req.body.passstagcount , req.body.tablenumber ,
+                    req.body.tablepx , req.body.transactionnumber , req.body.paymentstatusmsg, req.body.bookingconfirm , 
+                    req.body.termncondition , req.body.latlong , req.body.qrcode , req.body.bookingdate , 
+                    req.body.bookingtimestamp],  function(err, rows) {
+        connection.release();
+        if (!err) {
+            console.log("success");
+            //res.json(rows);
+            res.send(JSON.stringify("success"));
+        }
+      });
+  
+      connection.on("error", function(err) {
+        res.json({ code: 100, status: "Error in connection database" });
+        return;
+      });
+    });
+  }
