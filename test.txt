@@ -1,3 +1,19 @@
+https://www.youtube.com/watch?v=2oihkInZ880
+
+echo "# guestlistservernodejs" >> README.md
+git init
+git add README.md
+git commit -m "first commit"
+git remote add origin https://github.com/vichi100/guestlistservernodejs.git
+git push -u origin master
+…or push an existing repository from the command line
+git remote add origin https://github.com/vichi100/guestlistservernodejs.git
+git push -u origin master  
+  
+  
+  
+  
+  
   function bookTicket(req, res) {
     var clubid = req.body.clubid;
     // var eventDate = "19/Mar/2019";//req.query.eventDate;
