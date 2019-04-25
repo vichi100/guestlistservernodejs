@@ -1,2 +1,5 @@
 START SERVER:
     node server1.js
+
+    #increase to 4gb
+node --max-old-space-size=4096 server1.js

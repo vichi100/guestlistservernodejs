@@ -9,10 +9,11 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "cors": "^2.8.5",
+    "async": "^2.6.2",
     "express": "^4.16.4",
     "mysql": "github:mysqljs/mysql",
     "mysql2": "^1.6.5",
     "socket.io": "^2.2.0"
-  }
+  },
+  "serve": "node --max_old_space_size=4096 node_modules/.bin/vue-cli-service serve --open"
 }

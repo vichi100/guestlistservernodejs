@@ -2,14 +2,14 @@ var express = require("express");
 var mysql = require("mysql");
 var bodyParser     =         require("body-parser");
 var EventEmitter = require('events');
-
+var async = require('async');
 
 const emitter = new EventEmitter()
 emitter.setMaxListeners(0)
 var app = express();
 // ADD THIS
-var cors = require('cors');
-app.use(cors());
+// var cors = require('cors');
+// app.use(cors());
 app.use(function(req, res, next) {
   res.header("Access-Control-Allow-Origin", "*");
   res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
@@ -32,13 +32,14 @@ var pool = mysql.createPool({
   port: "3306",
   user: "root",
   password: "vichi123",
-  database: "guestlist",
+  database: "guestlist", 
   //connectionLimit: 0,
   queueLimit: 0,
   debug: false,
   acquireTimeout:20000,
   connectTimeout: 20000,
   //waitForConnections:false,
+  multipleStatements: true,
   _socket  : '/var/run/mysqld/mysqld.sock',
 });
 
@@ -71,6 +72,7 @@ pool.getConnection((err, connection) => {
           debug: false,
           acquireTimeout:20000,
           connectTimeout: 20000,
+          multipleStatements: true,
           //waitForConnections:false,
           _socket  : '/var/run/mysqld/mysqld.sock',
         });
@@ -113,6 +115,7 @@ function handle_database(req, res) {
 
 
 function getClubsDetails(req, res) {
+  var city = req.query.city;
     pool.getConnection(function(err, connection) {
       if (err) {
         connection.release();
@@ -123,7 +126,7 @@ function getClubsDetails(req, res) {
   
       console.log("connected as id " + connection.threadId);
   
-      connection.query("select * from clubs", function(err, rows) {
+      connection.query("select * from clubs where city=?", [city], function(err, rows) {
         connection.release();
         if (!err) {
             console.log(rows);
@@ -141,7 +144,11 @@ function getClubsDetails(req, res) {
     });
   }
 
-  function getEventsDetails(req, res) {
+  function getEventsDetails(req, res) {// greater then yesterday date and city
+    var city = req.query.city;
+    console.log('getEventsDetails: city='+city);
+    var today = new Date();   
+    console.log('getEventsDetails: today='+today);
     pool.getConnection(function(err, connection) {
       if (err) {
         connection.release();
@@ -152,10 +159,11 @@ function getClubsDetails(req, res) {
   
       console.log("connected as id " + connection.threadId);
   
-      connection.query("select * from events", function(err, rows) {
+      // connection.query("select * from events where city = ? and STR_TO_DATE(eventdate, ,'%d/%b/%Y') >= ?",[city, new Date()], function(err, rows) {
+        connection.query("select * from events where city = ? ",[city], function(err, rows) {
         connection.release();
         if (!err) {
-            console.log(rows);
+            console.log('getEventsDetails: '+JSON.stringify(rows));
             //res.json(rows);
             res.send(JSON.stringify(rows));
             res.end();
@@ -171,6 +179,7 @@ function getClubsDetails(req, res) {
   }
 
   function getOffersDetails(req, res) {
+    var city = req.query.city;
     pool.getConnection(function(err, connection) {
       if (err) {
         connection.release();
@@ -181,7 +190,7 @@ function getClubsDetails(req, res) {
   
       console.log("connected as id " + connection.threadId);
   
-      connection.query("select * from offers", function(err, rows) {
+      connection.query("select * from offers where city = ?",[city], function(err, rows) {
         connection.release();
         if (!err) {
             console.log(rows);
@@ -212,7 +221,7 @@ function getClubsDetails(req, res) {
   
       console.log("connected as id " + connection.threadId);
   
-      connection.query("select * from djtable", [city],function(err, rows) {
+      connection.query("select * from djtable where city = ?", [city],function(err, rows) {
         connection.release();
         if (!err) {
             console.log(rows);
@@ -230,12 +239,219 @@ function getClubsDetails(req, res) {
     });
   }
 
+  function getTicketDetails(req, res){
+    var clubid = req.query.clubid;
+    var eventDate = req.query.eventDate;
+    pool.getConnection(function(err, connection) {
+      if (err) {
+        connection.release();
+        res.json({ code: 100, status: "Error in connection database" });
+        res.end();
+        return;
+      }
 
-  function getTicketDetails(req, res) {
+    connection.query("select * from ticketdetailsbyclubs where clubid = ? and date = ?", [clubid, eventDate],function(err, rows) {
+      connection.release();
+        if (!err) {  
+          res.send(JSON.stringify(rows));
+          console.log('getTicketDetails: ticketdetailsbyclubs data: '+JSON.stringify(rows))
+          res.end();
+        }
+
+      });
+
+    connection.on("error", function(err) {
+      res.json({ code: 100, status: "Error in connection database" });
+      res.end();
+      return;
+    });
+
+    });
+  }
+  
+  
+  function getTicketDetailsX(req, res) {
+    var clubid = req.query.clubid;
+    var eventDate = '23/Apr/20919';//req.query.eventDate;
+    console.log("eventDate " + eventDate);
+    console.log("clubid " + clubid);
+
+    let allQueryExecuted = false;
+    let clubsTicketData = null;
+    let clubTicketData = {};
+    let eventTicketDataByDj = {};
+    let eventTicketDataByPR = {};
+    let eventTicketDataByGuestList = {}
+    pool.getConnection(function(err, connection) {
+      if (err) {
+        connection.release();
+        res.json({ code: 100, status: "Error in connection database" });
+        res.end();
+        return;
+      }
+
+      var sql = "select * from ticketdetailsbyclubs where clubid = ? and date = ?;select * from ticketsforevents where clubid = ? and date = ?";
+      connection.query(sql, [clubid, eventDate, clubid, eventDate],function(error, results, fields) {
+        console.log("results[0] "+JSON.stringify(results[0])); // [{1: 1}]
+        console.log("results[1] "+JSON.stringify(results[1])); 
+        // console.log("results[2] "+JSON.stringify(results[2]));// [{2: 2}]
+        // res.send(JSON.stringify({ "clubname": results[0], "location": results[1], "djname": results[2]}));
+        // res.end();
+        var ticketDetailsByClubsData = results[0];
+        var ticketsForEventsData = results[1];
+
+        let ticketType = null;
+        let ticketCategory = null;
+        let passCoupleCost = 0;
+        let passStagCost = 0;
+        let guestlistGirlAvailableCount = 0;
+        let guestListCoupleAvailableCount = 0;
+
+        Object.keys(ticketDetailsByClubsData).map((keyName, keyIndex) => {
+          ticketType = ticketDetailsByClubsData[keyName].type;
+          ticketCategory = ticketDetailsByClubsData[keyName].category;
+
+          if (ticketType == "pass" && ticketCategory == "couple") {
+            // this.setState({ passCoupleCost: rows[keyName].cost });
+            passCoupleCost = ticketDetailsByClubsData[keyName].cost;
+          }
+
+          if (ticketType == "pass" && ticketCategory == "stag") {
+            passStagCost = ticketDetailsByClubsData[keyName].cost
+          }
+
+          if (ticketType == "guestlist" && ticketCategory == "girl") {
+            guestlistGirlAvailableCount = ticketDetailsByClubsData[keyName].availbletickets
+          }
+          if (ticketType == "guestlist" && ticketCategory == "couple") {
+            guestListCoupleAvailableCount = ticketDetailsByClubsData[keyName].availbletickets
+          }
+
+        });
+
+        clubTicketData = {
+          "guestlistGirlAvailableCount": guestlistGirlAvailableCount,
+          "guestListCoupleAvailableCount": guestListCoupleAvailableCount,
+          "passStagCost": passStagCost,
+          "passCoupleCost": passCoupleCost,
+        }
+
+        guestlistGirlAvailableCount = 0;
+        guestListCoupleAvailableCount = 0;
+        let postedbyname = null;
+        let postedbyid = null;
+        
+        Object.keys(ticketsForEventsData).map((keyName, keyIndex) => {
+          let postedby = ticketsForEventsData[keyName].postedby;
+          let ticketCategory = ticketsForEventsData[keyName].category;
+          if(postedby != null && postedby == 'dj' && ticketCategory == "couple"){
+            guestListCoupleAvailableCount = ticketsForEventsData[keyName].availbletickets
+            postedbyname = ticketsForEventsData[keyName].postedbyname;
+            postedbyid = ticketsForEventsData[keyName].postedbyid;
+          }
+          if(postedby != null && postedby == 'dj' && ticketCategory == "girl"){
+            guestlistGirlAvailableCount = ticketsForEventsData[keyName].availbletickets
+            postedbyname = ticketsForEventsData[keyName].postedbyname;
+            postedbyid = ticketsForEventsData[keyName].postedbyid;
+          }
+        });
+
+        eventTicketDataByDj = {
+          "guestlistGirlAvailableCount": guestlistGirlAvailableCount,
+          "guestListCoupleAvailableCount": guestListCoupleAvailableCount,
+          "postedByName": postedbyname,
+          "postedById": postedbyid,
+        },
+        console.log('getTicketDetails: eventTicketDataByDj = '+JSON.stringify(eventTicketDataByDj))  
+        guestlistGirlAvailableCount = 0;
+        guestListCoupleAvailableCount = 0;
+        postedbyname = null,
+        postedbyid = null,
+        Object.keys(ticketsForEventsData).map((keyName, keyIndex) => {
+          let postedby = ticketsForEventsData[keyName].postedby;
+          let ticketCategory = ticketsForEventsData[keyName].category;
+          if(postedby != null && postedby == 'pr' && ticketCategory == "couple"){
+            guestListCoupleAvailableCount = ticketsForEventsData[keyName].availbletickets
+            postedbyname = ticketsForEventsData[keyName].postedbyname;
+            postedbyid = ticketsForEventsData[keyName].postedbyid;
+          }
+          if(postedby != null && postedby == 'pr' && ticketCategory == "girl"){
+            guestlistGirlAvailableCount = ticketsForEventsData[keyName].availbletickets
+            postedbyname = ticketsForEventsData[keyName].postedbyname;
+            postedbyid = ticketsForEventsData[keyName].postedbyid;
+          }
+        });
+
+        eventTicketDataByPR = {
+          "guestlistGirlAvailableCount": guestlistGirlAvailableCount,
+          "guestListCoupleAvailableCount": guestListCoupleAvailableCount,
+          "postedByName": postedbyname,
+          "postedById": postedbyid,
+        };
+        console.log('getTicketDetails: eventTicketDataByPR = '+JSON.stringify(eventTicketDataByPR))  
+        guestlistGirlAvailableCount = 0;
+        guestListCoupleAvailableCount = 0;
+        postedbyname = null,
+        postedbyid = null,
+
+        Object.keys(ticketsForEventsData).map((keyName, keyIndex) => {
+          let postedby = ticketsForEventsData[keyName].postedby;
+          let ticketCategory = ticketsForEventsData[keyName].category;
+          if(postedby != null && postedby == 'guestlist' && ticketCategory == "couple"){
+            guestListCoupleAvailableCount = ticketsForEventsData[keyName].availbletickets
+            postedbyname = ticketsForEventsData[keyName].postedbyname;
+            postedbyid = ticketsForEventsData[keyName].postedbyid;
+          }
+          if(postedby != null && postedby == 'guestlist' && ticketCategory == "girl"){
+            guestlistGirlAvailableCount = ticketsForEventsData[keyName].availbletickets
+            postedbyname = ticketsForEventsData[keyName].postedbyname;
+            postedbyid = ticketsForEventsData[keyName].postedbyid;
+          }
+        });
+
+        eventTicketDataByGuestList = {
+          "guestlistGirlAvailableCount": guestlistGirlAvailableCount,
+          "guestListCoupleAvailableCount": guestListCoupleAvailableCount,
+          "postedByName": postedbyname,
+          "postedById": postedbyid,
+        };
+        console.log('getTicketDetails: eventTicketDataByGuestList = '+JSON.stringify(eventTicketDataByGuestList));
+        res.send({"clubTicketData": clubTicketData, 
+        "eventTicketDataByDj": eventTicketDataByDj,
+        "eventTicketDataByPR": eventTicketDataByPR,
+        "eventTicketDataByGuestList" : eventTicketDataByGuestList
+        });
+        res.end();
+      })
+
+      connection.on("error", function(err) {
+        res.json({ code: 100, status: "Error in connection database" });
+        res.end();
+        return;
+      });
+
+    });
+
+
+
+
+  }
+
+
+  function getTicketDetailsX(req, res) {
     var clubid = req.query.clubid;
     var eventDate = req.query.eventDate;
     console.log("eventDate " + eventDate);
     console.log("clubid " + clubid);
+
+    let allQueryExecuted = false;
+    let clubsTicketData = null;
+    let clubTicketData = {};
+    let eventTicketDataByDj = {};
+    let eventTicketDataByPR = {};
+    let eventTicketDataByGuestList = {}
+
+    // get ticket details from ticketdetailsbyclubs table
     pool.getConnection(function(err, connection) {
       if (err) {
         connection.release();
@@ -245,13 +461,9 @@ function getClubsDetails(req, res) {
       }
       // club details data, club ticket data, dj ticket data, pr ticket data
       console.log("connected as id " + connection.threadId);
-      var clubsTicketData = null;
-      var clubTicketData = {};
-      var eventTicketDataByDj = {};
-      var eventTicketDataByPR = {};
-      var eventTicketDataByGuestList = {}
+      
       connection.query("select * from ticketdetailsbyclubs where clubid = ? and date = ?", [clubid, eventDate],function(err, rows) {
-        //connection.release();
+        connection.release();
         if (!err) {
           console.log(JSON.stringify(rows));
           clubsTicketData = JSON.stringify(rows);
@@ -281,16 +493,35 @@ function getClubsDetails(req, res) {
               guestListCoupleAvailableCount = rows[keyName].availbletickets
             }
           });
-
+          
           clubTicketData = {
             "guestlistGirlAvailableCount": guestlistGirlAvailableCount,
             "guestListCoupleAvailableCount": guestListCoupleAvailableCount,
             "passStagCost": passStagCost,
             "passCoupleCost": passCoupleCost,
           }
-            
+          console.log('getTicketDetails: clubTicketData = '+JSON.stringify(clubTicketData))  
         }
       });
+
+      
+  
+      connection.on("error", function(err) {
+        res.json({ code: 100, status: "Error in connection database" });
+        res.end();
+        return;
+      });
+    });
+
+
+    // get ticket details from ticketsforevents table
+    pool.getConnection(function(err, connection) {
+      if (err) {
+        connection.release();
+        res.json({ code: 100, status: "Error in connection database" });
+        res.end();
+        return;
+      }
 
       connection.query("select * from ticketsforevents where clubid = ? and date = ?", [clubid, eventDate],function(err, rows) {
         connection.release();
@@ -317,13 +548,13 @@ function getClubsDetails(req, res) {
               }
             });
 
-            eventTicketDataByDj= {
+            eventTicketDataByDj = {
               "guestlistGirlAvailableCount": guestlistGirlAvailableCount,
               "guestListCoupleAvailableCount": guestListCoupleAvailableCount,
               "postedByName": postedbyname,
               "postedById": postedbyid,
             },
-
+            console.log('getTicketDetails: eventTicketDataByDj = '+JSON.stringify(eventTicketDataByDj))  
             guestlistGirlAvailableCount = 0;
             guestListCoupleAvailableCount = 0;
             postedbyname = null,
@@ -349,7 +580,7 @@ function getClubsDetails(req, res) {
               "postedByName": postedbyname,
               "postedById": postedbyid,
             };
-
+            console.log('getTicketDetails: eventTicketDataByPR = '+JSON.stringify(eventTicketDataByPR))  
             guestlistGirlAvailableCount = 0;
             guestListCoupleAvailableCount = 0;
             postedbyname = null,
@@ -376,21 +607,25 @@ function getClubsDetails(req, res) {
               "postedByName": postedbyname,
               "postedById": postedbyid,
             };
-
-            res.send({"clubTicketData": clubTicketData, 
-                    "eventTicketDataByDj": eventTicketDataByDj,
-                    "eventTicketDataByPR": eventTicketDataByPR,
-                    "eventTicketDataByGuestList" : eventTicketDataByGuestList
-                  });
-            res.end();
+            console.log('getTicketDetails: eventTicketDataByGuestList = '+JSON.stringify(eventTicketDataByGuestList)) 
+            allQueryExecuted = true;
         }
       });
-  
-      connection.on("error", function(err) {
-        res.json({ code: 100, status: "Error in connection database" });
-        res.end();
-        return;
-      });
+      console.log('getTicketDetails: sending eventTicketDataByDj = '+JSON.stringify(eventTicketDataByDj))
+      while(!allQueryExecuted){
+          setTimeout(() => {}, 100);
+          
+      } 
+
+      res.send({"clubTicketData": clubTicketData, 
+          "eventTicketDataByDj": eventTicketDataByDj,
+          "eventTicketDataByPR": eventTicketDataByPR,
+          "eventTicketDataByGuestList" : eventTicketDataByGuestList
+          });
+          res.end();
+      
+
+      
     });
   }
 
@@ -426,8 +661,6 @@ function getClubsDetails(req, res) {
       });
     });
   }
-
-
 
   
   function getBookingDetails(req, res) {
@@ -466,15 +699,16 @@ function getClubsDetails(req, res) {
 
   function getSearchParameter(req, res) {
     
-   
+    var city = req.query.city;
       //console.log("connected as id " + connection.threadId);
 
-      var clubNameSQL ="select distinct clubname from clubs";
-      var locationSQL="select distinct location from clubs";
-      var djNameSQL = "select distinct name from djtable";
+      var clubNameSQL ="select distinct clubname from clubs where city='"+city+"'";
+      var locationSQL="select distinct location from clubs where city='"+city+"'";
+      var djNameSQL = "select distinct name from djtable where city='"+city+"'";
       //var eventNameSQL = "select distinct eventname from events";
       
-      multipleStatementsconnection.query('select distinct clubname from clubs; select distinct location from clubs; select distinct name from djtable;', function (error, results, fields) {
+      // multipleStatementsconnection.query('select distinct clubname from clubs; select distinct location from clubs; select distinct name from djtable;', function (error, results, fields) {
+        multipleStatementsconnection.query(clubNameSQL+'; '+locationSQL+'; '+djNameSQL+';', function (error, results, fields) {
         if (error) throw error;
         // `results` is an array with one element for every statement in the query:
         console.log("results[0] "+JSON.stringify(results[0])); // [{1: 1}]
@@ -486,6 +720,279 @@ function getClubsDetails(req, res) {
   }
 
 
+
+
+
+
+
+
+  function bookTicketT(req, res){
+
+    pool.getConnection(function(err, connection) {
+      connection.beginTransaction(function(err) {
+        if (err) {                  
+          //Transaction Error (Rollback and release connection)
+            connection.rollback(function() {
+                connection.release();
+                //Failure
+            });
+        } else {
+
+          console.log("connected as id " + connection.threadId);
+          var testSQL = "INSERT INTO ticketbookingdetails (bookingid , userid) VALUES(?,?)"
+          var insertSQL = "INSERT INTO ticketbookingdetails (bookingid , userid , mobilenumber , "+
+                        " email , clubid , clubname , eventid , eventname , eventdate , imageurl, postedby  ,"+
+                        " offerid , tablediscountamt , tablediscountpercentage ,  passdiscountamt , "+
+                        " passdiscountpercentage ,  totalprice , priceafterdiscount , bookingamount , "+
+                        " remainingamount , guestlistgirlcount , guestlistcouplecount , passcouplecount , "+
+                        " passstagcount , tablenumber , tablepx , transactionnumber , paymentstatusmsg, bookingconfirm , "+
+                        " termncondition , latlong , qrcode , bookingdate ,  bookingtimestamp, eventdateasdate )"+
+                        "VALUES(?,?,?,?,?,  ?,?,?,?,?,  ?,?,?,?,?,  ?,?,?,?,?, ?,?,?,?,?, ?,?,?,?,?,  ?,?,?,?, ?)";
+          connection.query(insertSQL, [req.body.bookingid , req.body.userid , req.body.mobilenumber , 
+            req.body.email , req.body.clubid , req.body.clubname , req.body.eventid , req.body.eventname , req.body.eventdate , 
+            req.body.imageurl,
+            req.body.postedby  , req.body.offerid , req.body.tablediscountamt , req.body.tablediscountpercentage , 
+            req.body.passdiscountamt , req.body.passdiscountpercentage , 
+            req.body.totalprice , req.body.priceafterdiscount , req.body.bookingamount , 
+            req.body.remainingamount , req.body.guestlistgirlcount , req.body.guestlistcouplecount , req.body.passcouplecount , 
+            req.body.passstagcount , req.body.tablenumber ,
+            req.body.tablepx , req.body.transactionnumber , req.body.paymentstatusmsg, req.body.bookingconfirm , 
+            req.body.termncondition , req.body.latlong , req.body.qrcode , req.body.bookingdate , 
+            req.body.bookingtimestamp, new Date(req.body.eventdate)],  function(err, rows) {
+            
+            if (!err) {
+                console.log("bookTicket: success, insert in db but not commited yet");
+            }else{
+              console.log("bookTicket: fail, insert in db fails");
+            }
+          });
+
+
+      console.log('bookTicket: req.body.postedby: '+req.body.postedby);
+      // if(req.body.postedby == 'club'){
+      //   var checkAvailbleticketsSQL = "select availbletickets from ticketdetailsbyclubs where clubid  = ? and date = ? and type ='guest list' and category = ?";
+        
+      //   var updateAvailbleTicketSQL = "UPDATE ticketdetailsbyclubs SET availbletickets = ? where clubid = ? and date = ? and type = 'guest list' and category = ?"
+      //   var availbletickets = 0;
+      //   //FOR GIRLS
+      //   if(parseInt(req.body.guestlistgirlcount) > 0){
+      //     connection.query(checkAvailbleticketsSQL, 
+      //       [req.body.clubid, req.body.eventdate, 'girl'],function(err, rows) {
+            
+      //       if (!err) {
+      //           console.log('bookTicket: checkAvailbleticketsSQL rows: '+JSON.stringify(rows));
+                
+      //           availbletickets = rows[0].availbletickets;
+      //           console.log('bookTicket: checkAvailbleticketsSQL availbletickets: '+availbletickets);
+      //       }
+      //     });
+      //     console.log('bookTicket: availbletickets = '+availbletickets);
+      //     if(parseInt(availbletickets) > 0){
+      //       var newAvailbletickets = parseInt(availbletickets) -1;
+      //       connection.query(updateAvailbleTicketSQL, 
+      //         [newAvailbletickets, req.body.clubid, req.body.eventdate, 'girl'],function(err, rows) {
+              
+      //         if (!err) {
+      //             console.log('bookTicket: updateAvailbleTicketSQL rows: '+JSON.stringify(rows));
+      //             console.log('bookTicket: newAvailbletickets: '+newAvailbletickets)
+      //             availbletickets = rows[0].availbletickets;
+                  
+      //         }
+      //       });
+      //     }
+      //   }
+      //   //FOR COUPLE
+      //   availbletickets = 0;
+      //   if(false){//parseInt(req.body.guestlistcouplecount) > 0
+      //     connection.query(checkAvailbleticketsSQL, 
+      //       [req.body.clubid, req.body.eventdate, 'couple'],function(err, rows) {
+            
+      //       if (!err) {
+      //           console.log(rows);
+      //           availbletickets = rows[0].availbletickets;
+      //           console.log('bookTicket: availbletickets for couple:'+ availbletickets)
+                
+      //       }
+      //     });
+      //     if(parseInt(availbletickets) > 0){
+      //       var newAvailbletickets = parseInt(availbletickets) -1;
+      //       connection.query(updateAvailbleTicketSQL, 
+      //         [newAvailbletickets, req.body.clubid, req.body.eventdate, 'couple'],function(err, rows) {
+              
+      //         if (!err) {
+      //             console.log(rows);
+      //             console.log('bookTicket: newAvailbletickets: '+newAvailbletickets)
+                  
+                  
+      //         }
+      //       });
+      //     }
+      //   }
+      // }
+
+ 
+
+
+        }// else part end   
+      });// Transaction End
+
+      res.send(JSON.stringify("success"));
+      res.end();
+  });
+  }
+
+function updateTicktIdCount1(req, res, ticketid, reduceCount){
+    var availbleticketsForGuestList = 0;
+    var checkAvailbleticketsSQL = "select availbletickets from ticketdetailsbyclubs where ticketid = ?";
+    var updateAvailbleTicketSQL = "UPDATE ticketdetailsbyclubs SET availbletickets = ? where ticketid = ?"
+       
+    pool.getConnection(function(err, connection) {
+      if (err) {
+        console.log("updateTicktIdCount: error: "+err);
+        connection.release();
+        return;
+      }
+
+      // update/reduce tickets available count for guestlist.
+      console.log('updateTicktIdCount:  ticketid: '+ticketid)
+      console.log('updateTicktIdCount: req.body.guestlistgirlcount: '+req.body.guestlistgirlcount);
+          connection.query(checkAvailbleticketsSQL, 
+            [ticketid],function(err, rows) {
+            connection.release();
+            if (!err) {
+                console.log('updateTicktIdCount: checkAvailbleticketsSQL rows: '+JSON.stringify(rows));
+                //res.json(rows);
+                availbleticketsForGuestList = rows[0].availbletickets;
+                console.log('updateTicktIdCount: checkAvailbleticketsSQL availbletickets: '+availbleticketsForGuestList);
+            }
+          });
+
+          connection.on("error", function(err) {
+            console.log("insertCustomerDetails: error: "+err);
+            
+            return;
+          });
+
+      //here reduce number
+      pool.getConnection(function(err, connection) {
+        if (err) {
+          console.log("updateTicktIdCount: error: "+err);
+          connection.release();
+          return;
+        }
+      
+        console.log('updateTicktIdCount: availbleticketsForGuestList = '+availbleticketsForGuestList);
+         
+        if(parseInt(availbleticketsForGuestList) > 0){
+          console.log('updateTicktIdCount: update AvailbleTicket ');
+          var newAvailbletickets = parseInt(availbleticketsForGuestList) - parseInt(reduceCount);
+          connection.query(updateAvailbleTicketSQL, 
+            [newAvailbletickets, ticketid],function(err, rows) {
+            connection.release();
+            if (!err) {
+                console.log('updateTicktIdCount: updateAvailbleTicketSQL rows: '+JSON.stringify(rows));
+                console.log('updateTicktIdCount: newAvailbletickets: '+newAvailbletickets);
+            }
+          });
+        }
+  
+        connection.on("error", function(err) {
+          console.log("insertCustomerDetails: error: "+err);
+          
+          return;
+        });
+      
+      });
+
+
+
+
+    });
+
+    
+
+
+  }
+
+
+
+function updateTicktIdCount(req, res, ticketid, reduceCount){
+    var availbleticketsForGuestList = 0;
+    var checkAvailbleticketsSQL = "select availbletickets from ticketdetailsbyclubs where ticketid = ?";
+    var updateAvailbleTicketSQL = "UPDATE ticketdetailsbyclubs SET availbletickets = ? where ticketid = ?";
+
+    async.series([
+      //performs the Query 1
+      function(callback){
+        pool.getConnection(function(err, connection) {
+          if (err) {
+            console.log("updateTicktIdCount: error: "+err);
+            connection.release();
+            return;
+          }
+                // update/reduce tickets available count for guestlist.
+          console.log('updateTicktIdCount:  ticketid: '+ticketid)
+          console.log('updateTicktIdCount: req.body.guestlistgirlcount: '+req.body.guestlistgirlcount);
+          connection.query(checkAvailbleticketsSQL, 
+            [ticketid],function(err, rows) {
+            connection.release();
+            if (!err) {
+                console.log('updateTicktIdCount: checkAvailbleticketsSQL rows: '+JSON.stringify(rows));
+                //res.json(rows);
+                availbleticketsForGuestList = rows[0].availbletickets;
+                console.log('updateTicktIdCount: checkAvailbleticketsSQL availbletickets: '+availbleticketsForGuestList);
+            }
+            callback(); //goes to the next function
+
+          });
+
+        });
+
+      },
+
+      //performs the Query 2 only after Query 1 is finished
+      function(callback){
+        //here reduce number
+        pool.getConnection(function(err, connection) {
+        if (err) {
+          console.log("updateTicktIdCount: error: "+err);
+          connection.release();
+          return;
+        }
+      
+        console.log('updateTicktIdCount: availbleticketsForGuestList = '+availbleticketsForGuestList);
+         
+        if(parseInt(availbleticketsForGuestList) > 0){
+          console.log('updateTicktIdCount: update AvailbleTicket ');
+          var newAvailbletickets = parseInt(availbleticketsForGuestList) - parseInt(reduceCount);
+          connection.query(updateAvailbleTicketSQL, 
+            [newAvailbletickets, ticketid],function(err, rows) {
+            connection.release();
+            if (!err) {
+                console.log('updateTicktIdCount: updateAvailbleTicketSQL rows: '+JSON.stringify(rows));
+                console.log('updateTicktIdCount: newAvailbletickets: '+newAvailbletickets);
+            }
+            callback();
+          });
+        }
+  
+        connection.on("error", function(err) {
+          console.log("insertCustomerDetails: error: "+err);
+          return;
+        });
+      
+      });
+   
+      }
+    ]);
+    
+  }
+
+
+
+
+
+
   function bookTicket(req, res) {
     //var clubid = req.body.clubid;
     // var eventDate = "19/Mar/2019";//req.query.eventDate;
@@ -495,7 +1002,9 @@ function getClubsDetails(req, res) {
     console.log("bookTicket: req.body.clubid: " + req.body.clubid);
     //console.log("bookTicket: req.data.clubid: " + req.data.clubid);
     //console.log("bookTicket: req.body.data.clubid: " + req.body.data.clubid);
+    updateTicket = false;
     pool.getConnection(function(err, connection) {
+
       if (err) {
         connection.release();
         res.json({ code: 100, status: "Error in connection database" });
@@ -514,7 +1023,8 @@ function getClubsDetails(req, res) {
                     " termncondition , latlong , qrcode , bookingdate ,  bookingtimestamp, eventdateasdate )"+
                     "VALUES(?,?,?,?,?,  ?,?,?,?,?,  ?,?,?,?,?,  ?,?,?,?,?, ?,?,?,?,?, ?,?,?,?,?,  ?,?,?,?, ?)";
       connection.query(insertSQL, [req.body.bookingid , req.body.userid , req.body.mobilenumber , 
-        req.body.email , req.body.clubid , req.body.clubname , req.body.eventid , req.body.eventname , req.body.eventdate , req.body.imageurl,
+        req.body.email , req.body.clubid , req.body.clubname , req.body.eventid , req.body.eventname , req.body.eventdate , 
+        req.body.imageurl,
         req.body.postedby  , req.body.offerid , req.body.tablediscountamt , req.body.tablediscountpercentage , 
         req.body.passdiscountamt , req.body.passdiscountpercentage , 
         req.body.totalprice , req.body.priceafterdiscount , req.body.bookingamount , 
@@ -525,13 +1035,37 @@ function getClubsDetails(req, res) {
         req.body.bookingtimestamp, new Date(req.body.eventdate)],  function(err, rows) {
         connection.release();
         if (!err) {
-            console.log("success");
+            console.log("bookTicket: success, insert in db");
             //res.json(rows);
             res.send(JSON.stringify("success"));
             res.end();
+            updateTicket = true;
+            console.log('updateTicktIdCount: req.body.guestlistgirlcount: '+req.body.guestlistgirlcount)
+            if(updateTicket == true && parseInt(req.body.guestlistgirlcount) > 0 && req.body.postedby != 'guestlist'){
+              var ticketIdForGirl = req.body.ticketIdForGirl; 
+              console.log('updateTicktIdCount: for girl ticketid: '+ticketIdForGirl)
+              updateTicktIdCount(req, res, ticketIdForGirl, parseInt(req.body.guestlistgirlcount));
+            }
+
+            console.log('updateTicktIdCount: req.body.guestlistcouplecount: '+req.body.guestlistcouplecount)
+            if(updateTicket == true && parseInt(req.body.guestlistcouplecount) > 0 && req.body.postedby != 'guestlist'){
+              var ticketIdForCouple = req.body.ticketIdForCouple; 
+              console.log('updateTicktIdCount: for couple ticketid: '+ticketIdForCouple)
+              updateTicktIdCount(req, res, ticketIdForCouple, parseInt(req.body.guestlistcouplecount));
+            } 
+
+            // update tablesdata if any table is booked
+            if(req.body.tablenumber != null && parseInt(req.body.tablenumber) > 0  && req.body.postedby != 'guestlist'){
+              updateTablesData(req, res)
+            }
         }
+
       });
-  
+
+      
+
+      
+      
       connection.on("error", function(err) {
         res.json({ code: 100, status: "Error in connection database" });
         res.end();
@@ -540,8 +1074,142 @@ function getClubsDetails(req, res) {
     });
   }
 
+  function updateTablesData(req, res){
+    pool.getConnection(function(err, connection) {
 
-  
+      if (err) {
+        console.log("updateGirlGuestListCount: error: "+err);
+        connection.release();
+        return;
+      }
+
+      var updateTableBookingStatus = 'UPDATE tablesdata SET booked = ? where clubid = ? and eventdate  = ? and tablenumber = ?';
+      connection.query(updateTableBookingStatus, 
+        ['booked', req.body.clubid, req.body.eventdate, req.body.tablenumber],function(err, rows) {
+        //connection.release();
+        if (!err) {
+            console.log(rows);
+            console.log("updateTablesData: table status updated for table num: "+req.body.tablenumber)
+           
+            
+        }
+      });
+
+
+    });
+
+  }
+
+  function updateGirlGuestListCount(req, res, checkAvailbleticketsSQL, updateAvailbleTicketSQL){
+    var availbleticketsForGuestList = 0;
+    pool.getConnection(function(err, connection) {
+      if (err) {
+        console.log("updateGirlGuestListCount: error: "+err);
+        connection.release();
+        return;
+      }
+
+      // update/reduce tickets available count for guestlist.
+      console.log('bookTicket: req.body.postedby: '+req.body.postedby);
+      
+      if(req.body.postedby == 'club'){
+        
+        if(parseInt(req.body.guestlistgirlcount) > 0){
+          connection.query(checkAvailbleticketsSQL, 
+            [req.body.clubid, req.body.eventdate, 'girl'],function(err, rows) {
+            connection.release();
+            if (!err) {
+                console.log('bookTicket: checkAvailbleticketsSQL rows: '+JSON.stringify(rows));
+                //res.json(rows);
+                availbleticketsForGuestList = rows[0].availbletickets;
+                console.log('bookTicket: checkAvailbleticketsSQL availbletickets: '+availbletickets);
+            }
+          });
+
+        }
+        
+      }
+
+    });
+
+    pool.getConnection(function(err, connection) {
+      if (err) {
+        console.log("updateGirlGuestListCount: error: "+err);
+        connection.release();
+        return;
+      }
+    
+      //console.log('bookTicket: availbleticketsX = '+availbletickets);
+       
+      if(parseInt(availbleticketsForGuestList) > 0){
+        console.log('bookTicket: update AvailbleTicket ');
+        var newAvailbletickets = parseInt(availbleticketsForGuestList) - parseInt(req.body.guestlistgirlcount);
+        connection.query(updateAvailbleTicketSQL, 
+          [newAvailbletickets, req.body.clubid, req.body.eventdate, 'girl'],function(err, rows) {
+          connection.release();
+          if (!err) {
+              console.log('bookTicket: updateAvailbleTicketSQL rows: '+JSON.stringify(rows));
+              console.log('bookTicket: newAvailbletickets: '+newAvailbletickets)
+              //res.json(rows);
+              //availbletickets = rows[0].availbletickets;
+              
+          }
+        });
+      }
+    
+    });
+
+
+  }
+
+  function updateCoupleGuestListCount(req, res, checkAvailbleticketsSQL, updateAvailbleTicketSQL){
+    var availbleticketsForCouple = 0;
+    pool.getConnection(function(err, connection) {
+      if (err) {
+        console.log("updateCoupleGuestListCount: error: "+err);
+        connection.release();
+        return;
+      }
+      
+      if(parseInt(req.body.guestlistcouplecount) > 0){
+        connection.query(checkAvailbleticketsSQL, 
+          [req.body.clubid, req.body.eventdate, 'couple'],function(err, rows) {
+          connection.release();
+          if (!err) {
+              console.log(rows);
+              //res.json(rows);
+              availbleticketsForCouple = rows[0].availbletickets;
+              console.log('bookTicket: availbletickets for couple:'+ availbleticketsForCouple)
+              
+          }
+        });
+      }
+    });
+
+    pool.getConnection(function(err, connection) {
+      if (err) {
+        console.log("updateCoupleGuestListCount: error: "+err);
+        connection.release();
+        return;
+      }
+      console.log('bookTicket: availbleticketsForCouple = '+availbleticketsForCouple)
+      if(parseInt(availbleticketsForCouple) > 0){
+        var newAvailbletickets = parseInt(availbleticketsForCouple) - parseInt(req.body.guestlistcouplecount);
+        connection.query(updateAvailbleTicketSQL, 
+          [newAvailbletickets, req.body.clubid, req.body.eventdate, 'couple'],function(err, rows) {
+          connection.release();
+          if (!err) {
+              console.log(rows);
+              console.log('bookTicket: newAvailbletickets for couple: '+newAvailbletickets)
+              
+          }
+        });
+      }
+    });
+
+
+
+  }
 
   function insertCustomerDetails(req, res) {
     var userid = req.body.userid;
