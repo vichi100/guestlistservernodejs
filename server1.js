@@ -22,7 +22,8 @@ var multipleStatementsconnection = mysql.createConnection({
   port: "3306",
   user: "root",
   password: "vichi123",
-  database: "guestlist",
+  //database: "guestlist",//TEST
+  database: "guestlistprod",//Prod
   multipleStatements: true,
 });
 
@@ -32,7 +33,8 @@ var pool = mysql.createPool({
   port: "3306",
   user: "root",
   password: "vichi123",
-  database: "guestlist", 
+  //database: "guestlist", 
+  database: "guestlistprod",//Prod
   //connectionLimit: 0,
   queueLimit: 0,
   debug: false,
@@ -143,6 +145,92 @@ function getClubsDetails(req, res) {
       });
     });
   }
+
+
+  function formatDate(date) {
+    var d = new Date(date),
+        month = '' + (d.getMonth() + 1),
+        day = '' + d.getDate(),
+        year = d.getFullYear();
+
+    if (month.length < 2) month = '0' + month;
+    if (day.length < 2) day = '0' + day;
+
+    return [year , month, day].join('-');
+}
+
+function getEventsDetailsOfOneClub(req, res) {// greater then yesterday date and city
+    var clubid = req.query.clubid;
+    console.log('getEventsDetails: clubid='+clubid);
+    var today = formatDate(new Date());   
+    console.log('getEventsDetails: today='+today);
+    pool.getConnection(function(err, connection) {
+      if (err) {
+        connection.release();
+        res.json({ code: 100, status: "Error in connection database" });
+        res.end();
+        return;
+      }
+  
+      console.log("connected as id " + connection.threadId);
+  
+      connection.query("select * from events where clubid = ? and STR_TO_DATE(eventdate ,'%d/%b/%Y') >= ?",[clubid, new Date()], function(err, rows) {
+       // connection.query("select * from events where clubid = ? ",[clubid], function(err, rows) {
+        connection.release();
+        if (!err) {
+            console.log('getEventsDetails: '+JSON.stringify(rows));
+            //res.json(rows);
+            res.send(JSON.stringify(rows));
+            res.end();
+        }
+      });
+  
+      connection.on("error", function(err) {
+        res.json({ code: 100, status: "Error in connection database" });
+        res.end();
+        return;
+      });
+    });
+  }
+
+  
+
+
+function getEventsDetailsForDJ(req, res) {// greater then yesterday date and city
+  var djid = req.query.djid;
+  console.log('getEventsDetailsForDJ: djid='+djid);
+  var today = formatDate(new Date());   
+  console.log('getEventsDetailsForDJ: today='+today);
+  pool.getConnection(function(err, connection) {
+    if (err) {
+      connection.release();
+      res.json({ code: 100, status: "Error in connection database" });
+      res.end();
+      return;
+    }
+
+    console.log("connected as id " + connection.threadId);
+
+    connection.query("select * from events where djid = ? and STR_TO_DATE(eventdate ,'%d/%b/%Y') >= ?",[djid, new Date()], function(err, rows) {
+     // connection.query("select * from events where clubid = ? ",[clubid], function(err, rows) {
+      connection.release();
+      if (!err) {
+          console.log('getEventsDetails: '+JSON.stringify(rows));
+          //res.json(rows);
+          res.send(JSON.stringify(rows));
+          res.end();
+      }
+    });
+
+    connection.on("error", function(err) {
+      res.json({ code: 100, status: "Error in connection database" });
+      res.end();
+      return;
+    });
+  });
+}
+
+ 
 
   function getEventsDetails(req, res) {// greater then yesterday date and city
     var city = req.query.city;
@@ -269,365 +357,6 @@ function getClubsDetails(req, res) {
     });
   }
   
-  
-  function getTicketDetailsX(req, res) {
-    var clubid = req.query.clubid;
-    var eventDate = '23/Apr/20919';//req.query.eventDate;
-    console.log("eventDate " + eventDate);
-    console.log("clubid " + clubid);
-
-    let allQueryExecuted = false;
-    let clubsTicketData = null;
-    let clubTicketData = {};
-    let eventTicketDataByDj = {};
-    let eventTicketDataByPR = {};
-    let eventTicketDataByGuestList = {}
-    pool.getConnection(function(err, connection) {
-      if (err) {
-        connection.release();
-        res.json({ code: 100, status: "Error in connection database" });
-        res.end();
-        return;
-      }
-
-      var sql = "select * from ticketdetailsbyclubs where clubid = ? and date = ?;select * from ticketsforevents where clubid = ? and date = ?";
-      connection.query(sql, [clubid, eventDate, clubid, eventDate],function(error, results, fields) {
-        console.log("results[0] "+JSON.stringify(results[0])); // [{1: 1}]
-        console.log("results[1] "+JSON.stringify(results[1])); 
-        // console.log("results[2] "+JSON.stringify(results[2]));// [{2: 2}]
-        // res.send(JSON.stringify({ "clubname": results[0], "location": results[1], "djname": results[2]}));
-        // res.end();
-        var ticketDetailsByClubsData = results[0];
-        var ticketsForEventsData = results[1];
-
-        let ticketType = null;
-        let ticketCategory = null;
-        let passCoupleCost = 0;
-        let passStagCost = 0;
-        let guestlistGirlAvailableCount = 0;
-        let guestListCoupleAvailableCount = 0;
-
-        Object.keys(ticketDetailsByClubsData).map((keyName, keyIndex) => {
-          ticketType = ticketDetailsByClubsData[keyName].type;
-          ticketCategory = ticketDetailsByClubsData[keyName].category;
-
-          if (ticketType == "pass" && ticketCategory == "couple") {
-            // this.setState({ passCoupleCost: rows[keyName].cost });
-            passCoupleCost = ticketDetailsByClubsData[keyName].cost;
-          }
-
-          if (ticketType == "pass" && ticketCategory == "stag") {
-            passStagCost = ticketDetailsByClubsData[keyName].cost
-          }
-
-          if (ticketType == "guestlist" && ticketCategory == "girl") {
-            guestlistGirlAvailableCount = ticketDetailsByClubsData[keyName].availbletickets
-          }
-          if (ticketType == "guestlist" && ticketCategory == "couple") {
-            guestListCoupleAvailableCount = ticketDetailsByClubsData[keyName].availbletickets
-          }
-
-        });
-
-        clubTicketData = {
-          "guestlistGirlAvailableCount": guestlistGirlAvailableCount,
-          "guestListCoupleAvailableCount": guestListCoupleAvailableCount,
-          "passStagCost": passStagCost,
-          "passCoupleCost": passCoupleCost,
-        }
-
-        guestlistGirlAvailableCount = 0;
-        guestListCoupleAvailableCount = 0;
-        let postedbyname = null;
-        let postedbyid = null;
-        
-        Object.keys(ticketsForEventsData).map((keyName, keyIndex) => {
-          let postedby = ticketsForEventsData[keyName].postedby;
-          let ticketCategory = ticketsForEventsData[keyName].category;
-          if(postedby != null && postedby == 'dj' && ticketCategory == "couple"){
-            guestListCoupleAvailableCount = ticketsForEventsData[keyName].availbletickets
-            postedbyname = ticketsForEventsData[keyName].postedbyname;
-            postedbyid = ticketsForEventsData[keyName].postedbyid;
-          }
-          if(postedby != null && postedby == 'dj' && ticketCategory == "girl"){
-            guestlistGirlAvailableCount = ticketsForEventsData[keyName].availbletickets
-            postedbyname = ticketsForEventsData[keyName].postedbyname;
-            postedbyid = ticketsForEventsData[keyName].postedbyid;
-          }
-        });
-
-        eventTicketDataByDj = {
-          "guestlistGirlAvailableCount": guestlistGirlAvailableCount,
-          "guestListCoupleAvailableCount": guestListCoupleAvailableCount,
-          "postedByName": postedbyname,
-          "postedById": postedbyid,
-        },
-        console.log('getTicketDetails: eventTicketDataByDj = '+JSON.stringify(eventTicketDataByDj))  
-        guestlistGirlAvailableCount = 0;
-        guestListCoupleAvailableCount = 0;
-        postedbyname = null,
-        postedbyid = null,
-        Object.keys(ticketsForEventsData).map((keyName, keyIndex) => {
-          let postedby = ticketsForEventsData[keyName].postedby;
-          let ticketCategory = ticketsForEventsData[keyName].category;
-          if(postedby != null && postedby == 'pr' && ticketCategory == "couple"){
-            guestListCoupleAvailableCount = ticketsForEventsData[keyName].availbletickets
-            postedbyname = ticketsForEventsData[keyName].postedbyname;
-            postedbyid = ticketsForEventsData[keyName].postedbyid;
-          }
-          if(postedby != null && postedby == 'pr' && ticketCategory == "girl"){
-            guestlistGirlAvailableCount = ticketsForEventsData[keyName].availbletickets
-            postedbyname = ticketsForEventsData[keyName].postedbyname;
-            postedbyid = ticketsForEventsData[keyName].postedbyid;
-          }
-        });
-
-        eventTicketDataByPR = {
-          "guestlistGirlAvailableCount": guestlistGirlAvailableCount,
-          "guestListCoupleAvailableCount": guestListCoupleAvailableCount,
-          "postedByName": postedbyname,
-          "postedById": postedbyid,
-        };
-        console.log('getTicketDetails: eventTicketDataByPR = '+JSON.stringify(eventTicketDataByPR))  
-        guestlistGirlAvailableCount = 0;
-        guestListCoupleAvailableCount = 0;
-        postedbyname = null,
-        postedbyid = null,
-
-        Object.keys(ticketsForEventsData).map((keyName, keyIndex) => {
-          let postedby = ticketsForEventsData[keyName].postedby;
-          let ticketCategory = ticketsForEventsData[keyName].category;
-          if(postedby != null && postedby == 'guestlist' && ticketCategory == "couple"){
-            guestListCoupleAvailableCount = ticketsForEventsData[keyName].availbletickets
-            postedbyname = ticketsForEventsData[keyName].postedbyname;
-            postedbyid = ticketsForEventsData[keyName].postedbyid;
-          }
-          if(postedby != null && postedby == 'guestlist' && ticketCategory == "girl"){
-            guestlistGirlAvailableCount = ticketsForEventsData[keyName].availbletickets
-            postedbyname = ticketsForEventsData[keyName].postedbyname;
-            postedbyid = ticketsForEventsData[keyName].postedbyid;
-          }
-        });
-
-        eventTicketDataByGuestList = {
-          "guestlistGirlAvailableCount": guestlistGirlAvailableCount,
-          "guestListCoupleAvailableCount": guestListCoupleAvailableCount,
-          "postedByName": postedbyname,
-          "postedById": postedbyid,
-        };
-        console.log('getTicketDetails: eventTicketDataByGuestList = '+JSON.stringify(eventTicketDataByGuestList));
-        res.send({"clubTicketData": clubTicketData, 
-        "eventTicketDataByDj": eventTicketDataByDj,
-        "eventTicketDataByPR": eventTicketDataByPR,
-        "eventTicketDataByGuestList" : eventTicketDataByGuestList
-        });
-        res.end();
-      })
-
-      connection.on("error", function(err) {
-        res.json({ code: 100, status: "Error in connection database" });
-        res.end();
-        return;
-      });
-
-    });
-
-
-
-
-  }
-
-
-  function getTicketDetailsX(req, res) {
-    var clubid = req.query.clubid;
-    var eventDate = req.query.eventDate;
-    console.log("eventDate " + eventDate);
-    console.log("clubid " + clubid);
-
-    let allQueryExecuted = false;
-    let clubsTicketData = null;
-    let clubTicketData = {};
-    let eventTicketDataByDj = {};
-    let eventTicketDataByPR = {};
-    let eventTicketDataByGuestList = {}
-
-    // get ticket details from ticketdetailsbyclubs table
-    pool.getConnection(function(err, connection) {
-      if (err) {
-        connection.release();
-        res.json({ code: 100, status: "Error in connection database" });
-        res.end();
-        return;
-      }
-      // club details data, club ticket data, dj ticket data, pr ticket data
-      console.log("connected as id " + connection.threadId);
-      
-      connection.query("select * from ticketdetailsbyclubs where clubid = ? and date = ?", [clubid, eventDate],function(err, rows) {
-        connection.release();
-        if (!err) {
-          console.log(JSON.stringify(rows));
-          clubsTicketData = JSON.stringify(rows);
-          let ticketType = null;
-          let ticketCategory = null;
-          let passCoupleCost = 0;
-          let passStagCost = 0;
-          let guestlistGirlAvailableCount = 0;
-          let guestListCoupleAvailableCount = 0;
-          Object.keys(rows).map((keyName, keyIndex) => {
-             ticketType = rows[keyName].type;
-             ticketCategory = rows[keyName].category;
-
-            if (ticketType == "pass" && ticketCategory == "couple") {
-              // this.setState({ passCoupleCost: rows[keyName].cost });
-              passCoupleCost = rows[keyName].cost;
-            }
-
-            if (ticketType == "pass" && ticketCategory == "stag") {
-              passStagCost = rows[keyName].cost
-            }
-
-            if (ticketType == "guestlist" && ticketCategory == "girl") {
-              guestlistGirlAvailableCount = rows[keyName].availbletickets
-            }
-            if (ticketType == "guestlist" && ticketCategory == "couple") {
-              guestListCoupleAvailableCount = rows[keyName].availbletickets
-            }
-          });
-          
-          clubTicketData = {
-            "guestlistGirlAvailableCount": guestlistGirlAvailableCount,
-            "guestListCoupleAvailableCount": guestListCoupleAvailableCount,
-            "passStagCost": passStagCost,
-            "passCoupleCost": passCoupleCost,
-          }
-          console.log('getTicketDetails: clubTicketData = '+JSON.stringify(clubTicketData))  
-        }
-      });
-
-      
-  
-      connection.on("error", function(err) {
-        res.json({ code: 100, status: "Error in connection database" });
-        res.end();
-        return;
-      });
-    });
-
-
-    // get ticket details from ticketsforevents table
-    pool.getConnection(function(err, connection) {
-      if (err) {
-        connection.release();
-        res.json({ code: 100, status: "Error in connection database" });
-        res.end();
-        return;
-      }
-
-      connection.query("select * from ticketsforevents where clubid = ? and date = ?", [clubid, eventDate],function(err, rows) {
-        connection.release();
-        if (!err) {
-            //console.log(JSON.stringify(rows));
-            //res.json(rows);
-            let guestlistGirlAvailableCount = 0;
-            let guestListCoupleAvailableCount = 0;
-            let postedbyname = null;
-            let postedbyid = null;
-            
-            Object.keys(rows).map((keyName, keyIndex) => {
-              let postedby = rows[keyName].postedby;
-              let ticketCategory = rows[keyName].category;
-              if(postedby != null && postedby == 'dj' && ticketCategory == "couple"){
-                guestListCoupleAvailableCount = rows[keyName].availbletickets
-                postedbyname = rows[keyName].postedbyname;
-                postedbyid = rows[keyName].postedbyid;
-              }
-              if(postedby != null && postedby == 'dj' && ticketCategory == "girl"){
-                guestlistGirlAvailableCount = rows[keyName].availbletickets
-                postedbyname = rows[keyName].postedbyname;
-                postedbyid = rows[keyName].postedbyid;
-              }
-            });
-
-            eventTicketDataByDj = {
-              "guestlistGirlAvailableCount": guestlistGirlAvailableCount,
-              "guestListCoupleAvailableCount": guestListCoupleAvailableCount,
-              "postedByName": postedbyname,
-              "postedById": postedbyid,
-            },
-            console.log('getTicketDetails: eventTicketDataByDj = '+JSON.stringify(eventTicketDataByDj))  
-            guestlistGirlAvailableCount = 0;
-            guestListCoupleAvailableCount = 0;
-            postedbyname = null,
-            postedbyid = null,
-            Object.keys(rows).map((keyName, keyIndex) => {
-              let postedby = rows[keyName].postedby;
-              let ticketCategory = rows[keyName].category;
-              if(postedby != null && postedby == 'pr' && ticketCategory == "couple"){
-                guestListCoupleAvailableCount = rows[keyName].availbletickets
-                postedbyname = rows[keyName].postedbyname;
-                postedbyid = rows[keyName].postedbyid;
-              }
-              if(postedby != null && postedby == 'pr' && ticketCategory == "girl"){
-                guestlistGirlAvailableCount = rows[keyName].availbletickets
-                postedbyname = rows[keyName].postedbyname;
-                postedbyid = rows[keyName].postedbyid;
-              }
-            });
-
-            eventTicketDataByPR = {
-              "guestlistGirlAvailableCount": guestlistGirlAvailableCount,
-              "guestListCoupleAvailableCount": guestListCoupleAvailableCount,
-              "postedByName": postedbyname,
-              "postedById": postedbyid,
-            };
-            console.log('getTicketDetails: eventTicketDataByPR = '+JSON.stringify(eventTicketDataByPR))  
-            guestlistGirlAvailableCount = 0;
-            guestListCoupleAvailableCount = 0;
-            postedbyname = null,
-            postedbyid = null,
-
-            Object.keys(rows).map((keyName, keyIndex) => {
-              let postedby = rows[keyName].postedby;
-              let ticketCategory = rows[keyName].category;
-              if(postedby != null && postedby == 'guestlist' && ticketCategory == "couple"){
-                guestListCoupleAvailableCount = rows[keyName].availbletickets
-                postedbyname = rows[keyName].postedbyname;
-                postedbyid = rows[keyName].postedbyid;
-              }
-              if(postedby != null && postedby == 'guestlist' && ticketCategory == "girl"){
-                guestlistGirlAvailableCount = rows[keyName].availbletickets
-                postedbyname = rows[keyName].postedbyname;
-                postedbyid = rows[keyName].postedbyid;
-              }
-            });
-
-            eventTicketDataByGuestList = {
-              "guestlistGirlAvailableCount": guestlistGirlAvailableCount,
-              "guestListCoupleAvailableCount": guestListCoupleAvailableCount,
-              "postedByName": postedbyname,
-              "postedById": postedbyid,
-            };
-            console.log('getTicketDetails: eventTicketDataByGuestList = '+JSON.stringify(eventTicketDataByGuestList)) 
-            allQueryExecuted = true;
-        }
-      });
-      console.log('getTicketDetails: sending eventTicketDataByDj = '+JSON.stringify(eventTicketDataByDj))
-      while(!allQueryExecuted){
-          setTimeout(() => {}, 100);
-          
-      } 
-
-      res.send({"clubTicketData": clubTicketData, 
-          "eventTicketDataByDj": eventTicketDataByDj,
-          "eventTicketDataByPR": eventTicketDataByPR,
-          "eventTicketDataByGuestList" : eventTicketDataByGuestList
-          });
-          res.end();
-      
-
-      
-    });
-  }
 
   function getTablesDetails(req, res) {
     var clubid = req.query.clubid;
@@ -721,202 +450,7 @@ function getClubsDetails(req, res) {
 
 
 
-
-
-
-
-
-  function bookTicketT(req, res){
-
-    pool.getConnection(function(err, connection) {
-      connection.beginTransaction(function(err) {
-        if (err) {                  
-          //Transaction Error (Rollback and release connection)
-            connection.rollback(function() {
-                connection.release();
-                //Failure
-            });
-        } else {
-
-          console.log("connected as id " + connection.threadId);
-          var testSQL = "INSERT INTO ticketbookingdetails (bookingid , userid) VALUES(?,?)"
-          var insertSQL = "INSERT INTO ticketbookingdetails (bookingid , userid , mobilenumber , "+
-                        " email , clubid , clubname , eventid , eventname , eventdate , imageurl, postedby  ,"+
-                        " offerid , tablediscountamt , tablediscountpercentage ,  passdiscountamt , "+
-                        " passdiscountpercentage ,  totalprice , priceafterdiscount , bookingamount , "+
-                        " remainingamount , guestlistgirlcount , guestlistcouplecount , passcouplecount , "+
-                        " passstagcount , tablenumber , tablepx , transactionnumber , paymentstatusmsg, bookingconfirm , "+
-                        " termncondition , latlong , qrcode , bookingdate ,  bookingtimestamp, eventdateasdate )"+
-                        "VALUES(?,?,?,?,?,  ?,?,?,?,?,  ?,?,?,?,?,  ?,?,?,?,?, ?,?,?,?,?, ?,?,?,?,?,  ?,?,?,?, ?)";
-          connection.query(insertSQL, [req.body.bookingid , req.body.userid , req.body.mobilenumber , 
-            req.body.email , req.body.clubid , req.body.clubname , req.body.eventid , req.body.eventname , req.body.eventdate , 
-            req.body.imageurl,
-            req.body.postedby  , req.body.offerid , req.body.tablediscountamt , req.body.tablediscountpercentage , 
-            req.body.passdiscountamt , req.body.passdiscountpercentage , 
-            req.body.totalprice , req.body.priceafterdiscount , req.body.bookingamount , 
-            req.body.remainingamount , req.body.guestlistgirlcount , req.body.guestlistcouplecount , req.body.passcouplecount , 
-            req.body.passstagcount , req.body.tablenumber ,
-            req.body.tablepx , req.body.transactionnumber , req.body.paymentstatusmsg, req.body.bookingconfirm , 
-            req.body.termncondition , req.body.latlong , req.body.qrcode , req.body.bookingdate , 
-            req.body.bookingtimestamp, new Date(req.body.eventdate)],  function(err, rows) {
-            
-            if (!err) {
-                console.log("bookTicket: success, insert in db but not commited yet");
-            }else{
-              console.log("bookTicket: fail, insert in db fails");
-            }
-          });
-
-
-      console.log('bookTicket: req.body.postedby: '+req.body.postedby);
-      // if(req.body.postedby == 'club'){
-      //   var checkAvailbleticketsSQL = "select availbletickets from ticketdetailsbyclubs where clubid  = ? and date = ? and type ='guest list' and category = ?";
-        
-      //   var updateAvailbleTicketSQL = "UPDATE ticketdetailsbyclubs SET availbletickets = ? where clubid = ? and date = ? and type = 'guest list' and category = ?"
-      //   var availbletickets = 0;
-      //   //FOR GIRLS
-      //   if(parseInt(req.body.guestlistgirlcount) > 0){
-      //     connection.query(checkAvailbleticketsSQL, 
-      //       [req.body.clubid, req.body.eventdate, 'girl'],function(err, rows) {
-            
-      //       if (!err) {
-      //           console.log('bookTicket: checkAvailbleticketsSQL rows: '+JSON.stringify(rows));
-                
-      //           availbletickets = rows[0].availbletickets;
-      //           console.log('bookTicket: checkAvailbleticketsSQL availbletickets: '+availbletickets);
-      //       }
-      //     });
-      //     console.log('bookTicket: availbletickets = '+availbletickets);
-      //     if(parseInt(availbletickets) > 0){
-      //       var newAvailbletickets = parseInt(availbletickets) -1;
-      //       connection.query(updateAvailbleTicketSQL, 
-      //         [newAvailbletickets, req.body.clubid, req.body.eventdate, 'girl'],function(err, rows) {
-              
-      //         if (!err) {
-      //             console.log('bookTicket: updateAvailbleTicketSQL rows: '+JSON.stringify(rows));
-      //             console.log('bookTicket: newAvailbletickets: '+newAvailbletickets)
-      //             availbletickets = rows[0].availbletickets;
-                  
-      //         }
-      //       });
-      //     }
-      //   }
-      //   //FOR COUPLE
-      //   availbletickets = 0;
-      //   if(false){//parseInt(req.body.guestlistcouplecount) > 0
-      //     connection.query(checkAvailbleticketsSQL, 
-      //       [req.body.clubid, req.body.eventdate, 'couple'],function(err, rows) {
-            
-      //       if (!err) {
-      //           console.log(rows);
-      //           availbletickets = rows[0].availbletickets;
-      //           console.log('bookTicket: availbletickets for couple:'+ availbletickets)
-                
-      //       }
-      //     });
-      //     if(parseInt(availbletickets) > 0){
-      //       var newAvailbletickets = parseInt(availbletickets) -1;
-      //       connection.query(updateAvailbleTicketSQL, 
-      //         [newAvailbletickets, req.body.clubid, req.body.eventdate, 'couple'],function(err, rows) {
-              
-      //         if (!err) {
-      //             console.log(rows);
-      //             console.log('bookTicket: newAvailbletickets: '+newAvailbletickets)
-                  
-                  
-      //         }
-      //       });
-      //     }
-      //   }
-      // }
-
- 
-
-
-        }// else part end   
-      });// Transaction End
-
-      res.send(JSON.stringify("success"));
-      res.end();
-  });
-  }
-
-function updateTicktIdCount1(req, res, ticketid, reduceCount){
-    var availbleticketsForGuestList = 0;
-    var checkAvailbleticketsSQL = "select availbletickets from ticketdetailsbyclubs where ticketid = ?";
-    var updateAvailbleTicketSQL = "UPDATE ticketdetailsbyclubs SET availbletickets = ? where ticketid = ?"
-       
-    pool.getConnection(function(err, connection) {
-      if (err) {
-        console.log("updateTicktIdCount: error: "+err);
-        connection.release();
-        return;
-      }
-
-      // update/reduce tickets available count for guestlist.
-      console.log('updateTicktIdCount:  ticketid: '+ticketid)
-      console.log('updateTicktIdCount: req.body.guestlistgirlcount: '+req.body.guestlistgirlcount);
-          connection.query(checkAvailbleticketsSQL, 
-            [ticketid],function(err, rows) {
-            connection.release();
-            if (!err) {
-                console.log('updateTicktIdCount: checkAvailbleticketsSQL rows: '+JSON.stringify(rows));
-                //res.json(rows);
-                availbleticketsForGuestList = rows[0].availbletickets;
-                console.log('updateTicktIdCount: checkAvailbleticketsSQL availbletickets: '+availbleticketsForGuestList);
-            }
-          });
-
-          connection.on("error", function(err) {
-            console.log("insertCustomerDetails: error: "+err);
-            
-            return;
-          });
-
-      //here reduce number
-      pool.getConnection(function(err, connection) {
-        if (err) {
-          console.log("updateTicktIdCount: error: "+err);
-          connection.release();
-          return;
-        }
-      
-        console.log('updateTicktIdCount: availbleticketsForGuestList = '+availbleticketsForGuestList);
-         
-        if(parseInt(availbleticketsForGuestList) > 0){
-          console.log('updateTicktIdCount: update AvailbleTicket ');
-          var newAvailbletickets = parseInt(availbleticketsForGuestList) - parseInt(reduceCount);
-          connection.query(updateAvailbleTicketSQL, 
-            [newAvailbletickets, ticketid],function(err, rows) {
-            connection.release();
-            if (!err) {
-                console.log('updateTicktIdCount: updateAvailbleTicketSQL rows: '+JSON.stringify(rows));
-                console.log('updateTicktIdCount: newAvailbletickets: '+newAvailbletickets);
-            }
-          });
-        }
-  
-        connection.on("error", function(err) {
-          console.log("insertCustomerDetails: error: "+err);
-          
-          return;
-        });
-      
-      });
-
-
-
-
-    });
-
-    
-
-
-  }
-
-
-
-function updateTicktIdCount(req, res, ticketid, reduceCount){
+  function updateTicktIdCount(req, res, ticketid, reduceCount){
     var availbleticketsForGuestList = 0;
     var checkAvailbleticketsSQL = "select availbletickets from ticketdetailsbyclubs where ticketid = ?";
     var updateAvailbleTicketSQL = "UPDATE ticketdetailsbyclubs SET availbletickets = ? where ticketid = ?";
@@ -987,11 +521,6 @@ function updateTicktIdCount(req, res, ticketid, reduceCount){
     ]);
     
   }
-
-
-
-
-
 
   function bookTicket(req, res) {
     //var clubid = req.body.clubid;
@@ -1100,116 +629,7 @@ function updateTicktIdCount(req, res, ticketid, reduceCount){
 
   }
 
-  function updateGirlGuestListCount(req, res, checkAvailbleticketsSQL, updateAvailbleTicketSQL){
-    var availbleticketsForGuestList = 0;
-    pool.getConnection(function(err, connection) {
-      if (err) {
-        console.log("updateGirlGuestListCount: error: "+err);
-        connection.release();
-        return;
-      }
 
-      // update/reduce tickets available count for guestlist.
-      console.log('bookTicket: req.body.postedby: '+req.body.postedby);
-      
-      if(req.body.postedby == 'club'){
-        
-        if(parseInt(req.body.guestlistgirlcount) > 0){
-          connection.query(checkAvailbleticketsSQL, 
-            [req.body.clubid, req.body.eventdate, 'girl'],function(err, rows) {
-            connection.release();
-            if (!err) {
-                console.log('bookTicket: checkAvailbleticketsSQL rows: '+JSON.stringify(rows));
-                //res.json(rows);
-                availbleticketsForGuestList = rows[0].availbletickets;
-                console.log('bookTicket: checkAvailbleticketsSQL availbletickets: '+availbletickets);
-            }
-          });
-
-        }
-        
-      }
-
-    });
-
-    pool.getConnection(function(err, connection) {
-      if (err) {
-        console.log("updateGirlGuestListCount: error: "+err);
-        connection.release();
-        return;
-      }
-    
-      //console.log('bookTicket: availbleticketsX = '+availbletickets);
-       
-      if(parseInt(availbleticketsForGuestList) > 0){
-        console.log('bookTicket: update AvailbleTicket ');
-        var newAvailbletickets = parseInt(availbleticketsForGuestList) - parseInt(req.body.guestlistgirlcount);
-        connection.query(updateAvailbleTicketSQL, 
-          [newAvailbletickets, req.body.clubid, req.body.eventdate, 'girl'],function(err, rows) {
-          connection.release();
-          if (!err) {
-              console.log('bookTicket: updateAvailbleTicketSQL rows: '+JSON.stringify(rows));
-              console.log('bookTicket: newAvailbletickets: '+newAvailbletickets)
-              //res.json(rows);
-              //availbletickets = rows[0].availbletickets;
-              
-          }
-        });
-      }
-    
-    });
-
-
-  }
-
-  function updateCoupleGuestListCount(req, res, checkAvailbleticketsSQL, updateAvailbleTicketSQL){
-    var availbleticketsForCouple = 0;
-    pool.getConnection(function(err, connection) {
-      if (err) {
-        console.log("updateCoupleGuestListCount: error: "+err);
-        connection.release();
-        return;
-      }
-      
-      if(parseInt(req.body.guestlistcouplecount) > 0){
-        connection.query(checkAvailbleticketsSQL, 
-          [req.body.clubid, req.body.eventdate, 'couple'],function(err, rows) {
-          connection.release();
-          if (!err) {
-              console.log(rows);
-              //res.json(rows);
-              availbleticketsForCouple = rows[0].availbletickets;
-              console.log('bookTicket: availbletickets for couple:'+ availbleticketsForCouple)
-              
-          }
-        });
-      }
-    });
-
-    pool.getConnection(function(err, connection) {
-      if (err) {
-        console.log("updateCoupleGuestListCount: error: "+err);
-        connection.release();
-        return;
-      }
-      console.log('bookTicket: availbleticketsForCouple = '+availbleticketsForCouple)
-      if(parseInt(availbleticketsForCouple) > 0){
-        var newAvailbletickets = parseInt(availbleticketsForCouple) - parseInt(req.body.guestlistcouplecount);
-        connection.query(updateAvailbleTicketSQL, 
-          [newAvailbletickets, req.body.clubid, req.body.eventdate, 'couple'],function(err, rows) {
-          connection.release();
-          if (!err) {
-              console.log(rows);
-              console.log('bookTicket: newAvailbletickets for couple: '+newAvailbletickets)
-              
-          }
-        });
-      }
-    });
-
-
-
-  }
 
   function insertCustomerDetails(req, res) {
     var userid = req.body.userid;
@@ -1295,12 +715,22 @@ app.get("/clubsDetails", function(req, res) {
     getEventsDetails(req, res);
   });
 
+  app.get("/eventsDetailsOfOneClub", function(req, res) {
+    getEventsDetailsOfOneClub(req, res);
+  });
+  
+
   app.get("/offersDetails", function(req, res) {
     getOffersDetails(req, res);
   });
 
   app.get("/djDetails", function(req, res) {
     getDJsDetails(req, res);
+  });
+
+
+  app.get("/eventsDetailsForDJ", function(req, res) {
+    getEventsDetailsForDJ(req, res);
   });
 
   app.get("/ticketDetails", function(req, res) {
@@ -1331,6 +761,6 @@ app.get("/clubsDetails", function(req, res) {
 
   
 
-  app.listen(6000, function() {
-    console.log("listening on *:6000");
+  app.listen(6060, function() {
+    console.log("listening on *:6060");
   });
